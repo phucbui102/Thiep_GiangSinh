@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { collection, addDoc, query, where, getDocs, orderBy, doc, setDoc, getDoc } from "firebase/firestore";
+import { collection, addDoc, query, where, getDocs, orderBy, doc, setDoc, getDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
 import { signInWithPopup, signOut, onAuthStateChanged, signInAnonymously } from "firebase/auth";
+import emailjs from '@emailjs/browser';
 import { db, auth, googleProvider } from './firebase';
 import './App.css'
 
@@ -17,8 +18,26 @@ function App() {
   const [users, setUsers] = useState([]);
   const [selectedFriend, setSelectedFriend] = useState('');
   const [manualId, setManualId] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [showInvite, setShowInvite] = useState(false);
+
+  // Chat State
+  const [activeChatId, setActiveChatId] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatTarget, setChatTarget] = useState(null); // The user we are chatting with
 
   useEffect(() => {
+    // Check for invite link
+    const params = new URLSearchParams(window.location.search);
+    const connectId = params.get('connect');
+    if (connectId) {
+      setManualId(connectId);
+      // Remove param from URL without reload
+      window.history.replaceState({}, document.title, window.location.pathname);
+      alert(`Bạn đã nhận được lời mời kết bạn từ ID: ${connectId}.\nID đã được điền sẵn vào ô gửi thiệp!`);
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser && !currentUser.isAnonymous) {
@@ -35,10 +54,43 @@ function App() {
     return () => unsubscribe();
   }, []);
 
+  const handleInvite = async () => {
+    if (!inviteEmail) return alert("Vui lòng nhập email!");
+    setIsSaving(true);
+
+    // --- CẤU HÌNH EMAILJS (MIỄN PHÍ - CLIENT SIDE) ---
+    const SERVICE_ID = 'service_l37a004';
+    const TEMPLATE_ID = 'template_qvd919y';
+    const PUBLIC_KEY = '356CAd-rAYM_Y4STI';
+
+    const connectLink = `${window.location.protocol}//${window.location.host}/?connect=${user?.uid}`;
+
+    const templateParams = {
+      to_email: inviteEmail,
+      from_name: user?.displayName || "Bạn của bạn",
+      message: `Chào bạn, mình muốn kết bạn để gửi thiệp Giáng Sinh! Bấm vào link này để chấp nhận và gửi lại thiệp cho mình nhé: ${connectLink}`,
+      link: connectLink,
+      my_id: user?.uid
+    };
+
+    try {
+      await emailjs.send(SERVICE_ID, TEMPLATE_ID, templateParams, PUBLIC_KEY);
+      alert(`Đã gửi mail mời đến ${inviteEmail} thành công!`);
+      setInviteEmail('');
+      setShowInvite(false);
+    } catch (e) {
+      console.error("Lỗi gửi mail invite:", e);
+      alert("Lỗi khi gửi mail: " + JSON.stringify(e));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   const saveUserProfile = async (user) => {
     try {
       await setDoc(doc(db, "users", user.uid), {
         displayName: user.displayName,
+        email: user.email,
         photoURL: user.photoURL,
         lastSeen: new Date()
       }, { merge: true });
@@ -46,6 +98,8 @@ function App() {
       console.error("Error saving user profile:", e);
     }
   }
+
+
 
   const fetchUsers = async (currentUid) => {
     try {
@@ -93,6 +147,64 @@ function App() {
     }
   };
 
+  // --- CHAT LOGIC ---
+
+  useEffect(() => {
+    if (!activeChatId) return;
+
+    const q = query(
+      collection(db, "chats", activeChatId, "messages"),
+      orderBy("createdAt", "asc")
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setChatMessages(msgs);
+    });
+
+    return () => unsubscribe();
+  }, [activeChatId]);
+
+  const getChatId = (uid1, uid2) => {
+    return [uid1, uid2].sort().join("_");
+  }
+
+  const handleSelectChatRef = (targetUser) => {
+    if (!user) return alert("Vui lòng đăng nhập để chat!");
+    const chatId = getChatId(user.uid, targetUser.id);
+    setActiveChatId(chatId);
+    setChatTarget(targetUser);
+    setMode('chat');
+  };
+
+  const handleSendMessage = async () => {
+    if (!chatInput.trim() || !activeChatId || !user) return;
+
+    const text = chatInput.trim();
+    setChatInput(''); // Clear input immediately for UX
+
+    try {
+      // 1. Add message to subcollection
+      await addDoc(collection(db, "chats", activeChatId, "messages"), {
+        text: text,
+        senderId: user.uid,
+        createdAt: serverTimestamp(),
+        senderName: user.displayName
+      });
+
+      // 2. Update chat metadata (for recent chats list - optional feature for future)
+      await setDoc(doc(db, "chats", activeChatId), {
+        users: [user.uid, chatTarget.id],
+        lastMessage: text,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+    } catch (e) {
+      console.error("Error sending message:", e);
+      alert("Lỗi gửi tin nhắn");
+    }
+  };
+
   const handleLogin = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
@@ -125,6 +237,8 @@ function App() {
     }
   }
 
+
+
   const handleSend = async () => {
     if (!message) return alert("Hãy viết lời chúc nhé!")
 
@@ -141,19 +255,35 @@ function App() {
       }
 
       let recipientInfo = null;
+      let recipientEmail = null;
       let targetId = manualId.trim() || selectedFriend;
 
       if (targetId) {
-        let friend = users.find(u => u.id === targetId);
+        let friend = null;
 
-        if (!friend && manualId.trim()) {
-          try {
-            const userDoc = await getDoc(doc(db, "users", targetId));
-            if (userDoc.exists()) {
-              friend = { id: userDoc.id, ...userDoc.data() };
+        // CHECK IF INPUT IS EMAIL
+        if (targetId.includes('@')) {
+          recipientEmail = targetId;
+          // 1. Try finding in loaded list
+          friend = users.find(u => u.email === targetId);
+
+          // 2. If not, query Firestore
+          if (!friend) {
+            const q = query(collection(db, "users"), where("email", "==", targetId));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              const docData = snap.docs[0];
+              friend = { id: docData.id, ...docData.data() };
             }
-          } catch (err) {
-            console.warn("Could not verify manual ID recipient");
+          }
+        } else {
+          // INPUT IS ID
+          friend = users.find(u => u.id === targetId);
+          if (!friend && manualId.trim()) {
+            try {
+              const userDoc = await getDoc(doc(db, "users", targetId));
+              if (userDoc.exists()) friend = { id: userDoc.id, ...userDoc.data() };
+            } catch (err) { console.warn("Verify ID failed"); }
           }
         }
 
@@ -161,12 +291,21 @@ function App() {
           recipientInfo = {
             id: friend.id,
             name: friend.displayName || "Bạn",
-            photo: friend.photoURL
+            photo: friend.photoURL,
+            email: friend.email
+          };
+          if (!recipientEmail && friend.email) recipientEmail = friend.email;
+        } else if (targetId && targetId.includes('@')) {
+          recipientInfo = {
+            id: 'guest',
+            name: targetId,
+            email: targetId,
+            photo: null
           };
         } else if (manualId.trim()) {
           recipientInfo = {
             id: manualId.trim(),
-            name: "Người dùng (ID: " + manualId.trim().substring(0, 4) + "...",
+            name: "ID: " + manualId.trim().substring(0, 4) + "...",
             photo: null
           };
         }
@@ -184,6 +323,25 @@ function App() {
       };
 
       await addDoc(collection(db, "christmas-cards"), cardData);
+
+      // --- SEND EMAIL NOTIFICATION VIA EMAILJS ---
+      if (recipientEmail) {
+        const SERVICE_ID = 'service_l37a004';
+        const TEMPLATE_ID = 'template_qvd919y';
+        const PUBLIC_KEY = '356CAd-rAYM_Y4STI';
+
+        const emailParams = {
+          to_email: recipientEmail,
+          from_name: currentUser?.displayName || "Một người bạn",
+          message: `Bạn nhận được một thiệp Giáng Sinh!\n\n"${message}"\n\nXem tại: ${window.location.href}`,
+          link: window.location.href,
+          my_id: currentUser?.uid
+        };
+
+        emailjs.send(SERVICE_ID, TEMPLATE_ID, emailParams, PUBLIC_KEY)
+          .then(() => console.log("Email Notification Sent"))
+          .catch(err => console.error("Email Notification Failed", err));
+      }
 
       if (currentUser) {
         fetchMyCards(currentUser.uid);
@@ -221,7 +379,9 @@ function App() {
             <div className="user-details">
               <span className="user-name">Xin chào, {user.displayName || "Bạn"}!</span>
               <span className="user-id-label" onClick={handleCopyId} title="Click để sao chép">ID: {user.uid.substring(0, 6)}... 📋</span>
+              <span className="invite-link" onClick={() => setShowInvite(!showInvite)}>Mời bạn bè 📧</span>
             </div>
+            <button className="pixel-btn sm-btn" onClick={() => setMode('chat')}>Tin Nhắn 💬</button>
             <button className="pixel-btn sm-btn" onClick={() => setMode('list')}>Hộp Thư 📬</button>
             <button className="pixel-btn sm-btn logout" onClick={handleLogout}>Đăng Xuất</button>
           </div>
@@ -231,6 +391,22 @@ function App() {
           </button>
         )}
       </div>
+
+      {showInvite && (
+        <div className="invite-popup">
+          <input
+            type="email"
+            className="pixel-input sm-input"
+            placeholder="Nhập Gmail bạn bè..."
+            value={inviteEmail}
+            onChange={(e) => setInviteEmail(e.target.value)}
+          />
+          <button disabled={isSaving} className="pixel-btn sm-btn" onClick={handleInvite}>
+            {isSaving ? "Đang gửi..." : "Gửi Gmail Mời 📨"}
+          </button>
+          <button className="close-btn" onClick={() => setShowInvite(false)}>✕</button>
+        </div>
+      )}
 
       <div className="christmas-container">
         <h1 className="hero-title">Merry Christmas</h1>
@@ -388,6 +564,66 @@ function App() {
             <button className="pixel-btn" onClick={() => setMode('initial')} style={{ marginTop: '20px' }}>
               Quay Lại
             </button>
+          </div>
+        )}
+
+        {mode === 'chat' && (
+          <div className="chat-container-layout">
+            <div className="chat-sidebar">
+              <h3>Danh Sách Bạn Bè</h3>
+              <div className="friends-list">
+                {users.map(u => (
+                  <div
+                    key={u.id}
+                    className={`friend-item ${chatTarget?.id === u.id ? 'active' : ''}`}
+                    onClick={() => handleSelectChatRef(u)}
+                  >
+                    <img src={u.photoURL || "https://ui-avatars.com/api/?name=User"} alt="avt" className="mini-avatar" />
+                    <span>{u.displayName || "Noname"}</span>
+                    {u.id === user?.uid && "(Bạn)"}
+                  </div>
+                ))}
+              </div>
+              <button className="pixel-btn sm-btn" onClick={() => setMode('initial')} style={{ marginTop: 'auto' }}>Thoát</button>
+            </div>
+
+            <div className="chat-main">
+              {chatTarget ? (
+                <>
+                  <div className="chat-header">
+                    <img src={chatTarget.photoURL} alt="" className="mini-avatar" />
+                    <span>Đang chat với: <strong>{chatTarget.displayName}</strong></span>
+                  </div>
+                  <div className="chat-messages">
+                    {chatMessages.length === 0 ? (
+                      <div className="empty-chat">Chưa có tin nhắn nào. Hãy nói "Xin chào"! 👋</div>
+                    ) : (
+                      chatMessages.map((msg) => (
+                        <div key={msg.id} className={`message-bubble ${msg.senderId === user.uid ? 'me' : 'them'}`}>
+                          <div className="msg-content">{msg.text}</div>
+                          {/* <div className="msg-time">{msg.createdAt ? new Date(msg.createdAt.seconds * 1000).toLocaleTimeString() : '...'}</div> */}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="chat-input-area">
+                    <input
+                      type="text"
+                      className="pixel-input sm-input chat-input-field"
+                      placeholder="Nhập tin nhắn..."
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                    />
+                    <button className="pixel-btn sm-btn" onClick={handleSendMessage}>Gửi ✈️</button>
+                  </div>
+                </>
+              ) : (
+                <div className="no-chat-selected">
+                  <p>⬅ Chọn một người bạn để bắt đầu trò chuyện</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
