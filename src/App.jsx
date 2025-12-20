@@ -20,6 +20,8 @@ function App() {
   const [manualId, setManualId] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [showInvite, setShowInvite] = useState(false);
+  const [lastCreatedCardId, setLastCreatedCardId] = useState('');
+  const [viewingCard, setViewingCard] = useState(null);
 
   // Chat State
   const [activeChatId, setActiveChatId] = useState(null);
@@ -31,11 +33,17 @@ function App() {
     // Check for invite link
     const params = new URLSearchParams(window.location.search);
     const connectId = params.get('connect');
+    const cardId = params.get('card');
+
     if (connectId) {
       setManualId(connectId);
       // Remove param from URL without reload
       window.history.replaceState({}, document.title, window.location.pathname);
       alert(`Bạn đã nhận được lời mời kết bạn từ ID: ${connectId}.\nID đã được điền sẵn vào ô gửi thiệp!`);
+    }
+
+    if (cardId) {
+      fetchPublicCard(cardId);
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -63,7 +71,7 @@ function App() {
     const TEMPLATE_ID = 'template_qvd919y';
     const PUBLIC_KEY = '356CAd-rAYM_Y4STI';
 
-    const connectLink = `${window.location.protocol}//${window.location.host}/?connect=${user?.uid}`;
+    const connectLink = `${window.location.origin}/?connect=${user?.uid}`;
 
     const templateParams = {
       to_email: inviteEmail,
@@ -144,6 +152,25 @@ function App() {
     } catch (error) {
       console.error("Lỗi lấy thiệp được nhận:", error);
       alert("Lỗi tải hộp thư (có thể do thiếu Index, đã chuyển sang sort client): " + error.message);
+    }
+  };
+
+  const fetchPublicCard = async (cardId) => {
+    setIsSaving(true);
+    try {
+      const docRef = doc(db, "christmas-cards", cardId);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        setViewingCard({ id: docSnap.id, ...docSnap.data() });
+        setMode('view_card');
+      } else {
+        alert("Không tìm thấy thiệp này!");
+      }
+    } catch (e) {
+      console.error("Lỗi tải thiệp:", e);
+      alert("Lỗi khi tải thiệp: " + e.message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -322,7 +349,8 @@ function App() {
         recipient: recipientInfo
       };
 
-      await addDoc(collection(db, "christmas-cards"), cardData);
+      const docRef = await addDoc(collection(db, "christmas-cards"), cardData);
+      setLastCreatedCardId(docRef.id);
 
       // --- SEND EMAIL NOTIFICATION VIA EMAILJS ---
       if (recipientEmail) {
@@ -333,8 +361,8 @@ function App() {
         const emailParams = {
           to_email: recipientEmail,
           from_name: currentUser?.displayName || "Một người bạn",
-          message: `Bạn nhận được một thiệp Giáng Sinh!\n\n"${message}"\n\nXem tại: ${window.location.href}`,
-          link: window.location.href,
+          message: `Bạn nhận được một thiệp Giáng Sinh!\n\n"${message}"\n\nXem tại: ${window.location.origin}/?card=${docRef.id}`,
+          link: `${window.location.origin}/?card=${docRef.id}`,
           my_id: currentUser?.uid
         };
 
@@ -515,6 +543,28 @@ function App() {
                 {stamps.map((s, i) => <span key={i}>{s}</span>)}
               </div>
             </div>
+
+            <div className="share-section">
+              <p>Chia sẻ link để người nhận xem trực tiếp:</p>
+              <div className="share-link-box">
+                <input
+                  type="text"
+                  readOnly
+                  value={`${window.location.origin}/?card=${lastCreatedCardId}`}
+                  className="pixel-input sm-input"
+                />
+                <button
+                  className="pixel-btn sm-btn"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${window.location.origin}/?card=${lastCreatedCardId}`);
+                    alert("Đã sao chép link chia sẻ!");
+                  }}
+                >
+                  Sao chép 📋
+                </button>
+              </div>
+            </div>
+
             <button className="pixel-btn reset-btn" onClick={handleReset}>
               Làm Thiệp Khác ↺
             </button>
@@ -623,6 +673,30 @@ function App() {
                   <p>⬅ Chọn một người bạn để bắt đầu trò chuyện</p>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {mode === 'view_card' && viewingCard && (
+          <div className="view-card-mode">
+            <h2>Bạn nhận được một lời chúc!</h2>
+            <div className="card-author-info">
+              {viewingCard.photoURL && <img src={viewingCard.photoURL} alt="avt" className="user-avatar" />}
+              <p>Từ: <strong>{viewingCard.authorName}</strong></p>
+            </div>
+            <div className="final-card" style={{ backgroundColor: viewingCard.color }}>
+              <p className="card-text">{viewingCard.message}</p>
+              <div className="final-stamps">
+                {viewingCard.stamps && viewingCard.stamps.map((s, i) => <span key={i}>{s}</span>)}
+              </div>
+            </div>
+            <div className="view-card-actions">
+              <button className="pixel-btn" onClick={() => {
+                setMode('initial');
+                window.history.replaceState({}, document.title, window.location.pathname);
+              }}>
+                Tạo thiệp của riêng bạn 🎄
+              </button>
             </div>
           </div>
         )}
