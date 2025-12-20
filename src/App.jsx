@@ -22,6 +22,8 @@ function App() {
   const [showInvite, setShowInvite] = useState(false);
   const [lastCreatedCardId, setLastCreatedCardId] = useState('');
   const [viewingCard, setViewingCard] = useState(null);
+  const [fontFamily, setFontFamily] = useState("'Caveat', cursive");
+  const [bgStyle, setBgStyle] = useState({ type: 'color', value: '#fff' });
 
   // Chat State
   const [activeChatId, setActiveChatId] = useState(null);
@@ -254,7 +256,12 @@ function App() {
   }
 
   const handleAddStamp = (stamp) => {
-    setStamps([...stamps, stamp])
+    if (stamps.length >= 12) return alert("Hết chỗ dán rồi bạn ơi!");
+    setStamps([...stamps, { id: Date.now() + Math.random(), char: stamp, x: Math.random() * 80 + 10, y: Math.random() * 80 + 10 }])
+  }
+
+  const handleRemoveStamp = (id) => {
+    setStamps(stamps.filter(s => s.id !== id))
   }
 
   const handleCopyId = () => {
@@ -346,7 +353,9 @@ function App() {
         uid: currentUser ? currentUser.uid : 'anonymous',
         authorName: currentUser ? (currentUser.displayName || 'Ẩn danh') : 'Ẩn danh',
         photoURL: currentUser ? currentUser.photoURL : null,
-        recipient: recipientInfo
+        recipient: recipientInfo,
+        fontFamily: fontFamily,
+        bgStyle: bgStyle
       };
 
       const docRef = await addDoc(collection(db, "christmas-cards"), cardData);
@@ -390,6 +399,8 @@ function App() {
     setMessage('')
     setStamps([])
     setCardColor('#fff')
+    setFontFamily("'Caveat', cursive")
+    setBgStyle({ type: 'color', value: '#fff' })
   }
 
   return (
@@ -495,30 +506,84 @@ function App() {
                 onChange={(e) => setMessage(e.target.value)}
               />
 
-              <div className="color-options">
-                {['#fff', '#ffcccc', '#ccffcc', '#fff5cc'].map(c => (
-                  <button
-                    key={c}
-                    className={`color-btn ${cardColor === c ? 'active' : ''}`}
-                    style={{ backgroundColor: c }}
-                    onClick={() => setCardColor(c)}
-                  />
-                ))}
+              <div className="style-section">
+                <label>Phông chữ:</label>
+                <div className="font-options">
+                  {[
+                    { name: 'Nét viết', value: "'Caveat', cursive" },
+                    { name: 'Mềm mại', value: "'Dancing Script', cursive" },
+                    { name: 'Vui nhộn', value: "'Mountains of Christmas', cursive" },
+                    { name: 'Nghệ thuật', value: "'Pacifico', cursive" }
+                  ].map(f => (
+                    <button
+                      key={f.value}
+                      className={`font-btn ${fontFamily === f.value ? 'active' : ''}`}
+                      style={{ fontFamily: f.value }}
+                      onClick={() => setFontFamily(f.value)}
+                    >
+                      {f.name}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div className="stamp-options">
-                {['🎄', '🎅', '⛄', '🎁', '⭐'].map(s => (
-                  <button key={s} className="stamp-btn" onClick={() => handleAddStamp(s)}>
-                    {s}
-                  </button>
-                ))}
+              <div className="style-section">
+                <label>Màu nền / Hiệu ứng:</label>
+                <div className="bg-options">
+                  {[
+                    { type: 'color', value: '#fff' },
+                    { type: 'color', value: '#ffcccc' },
+                    { type: 'color', value: '#ccffcc' },
+                    { type: 'color', value: '#fff5cc' },
+                    { type: 'gradient', value: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)', label: '🌸' },
+                    { type: 'gradient', value: 'linear-gradient(to top, #11998e, #38ef7d)', label: '🌿' },
+                    { type: 'gradient', value: 'linear-gradient(to bottom, #d42426, #7e0c0e)', label: '🍎' },
+                    { type: 'gradient', value: 'linear-gradient(to bottom, #0f2027, #2c5364)', label: '🌌' }
+                  ].map((b, i) => (
+                    <button
+                      key={i}
+                      className={`bg-btn ${bgStyle.value === b.value ? 'active' : ''}`}
+                      style={{ background: b.value }}
+                      onClick={() => setBgStyle(b)}
+                    >
+                      {b.label || ''}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="style-section">
+                <label>Hình dán (Click để thêm, click vào hình trong thiệp để xóa):</label>
+                <div className="stamp-options">
+                  {['🎄', '🎅', '⛄', '🎁', '⭐', '🔔', '❄️', '🦌', '🍬', '🍪', '🧦', '🕯️'].map(s => (
+                    <button key={s} className="stamp-btn" onClick={() => handleAddStamp(s)}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div className="card-preview" style={{ backgroundColor: cardColor }}>
+            <div
+              className="card-preview"
+              style={{
+                background: bgStyle.value,
+                fontFamily: fontFamily
+              }}
+            >
               <p className="card-text">{message || "Lời chúc của bạn..."}</p>
-              <div className="card-stamps">
-                {stamps.map((s, i) => <span key={i}>{s}</span>)}
+              <div className="card-stamps-layer">
+                {stamps.map((s) => (
+                  <span
+                    key={s.id}
+                    className="placed-stamp"
+                    style={{ left: `${s.x}%`, top: `${s.y}%` }}
+                    onClick={() => handleRemoveStamp(s.id)}
+                    title="Click để xóa"
+                  >
+                    {s.char}
+                  </span>
+                ))}
               </div>
             </div>
 
@@ -537,10 +602,24 @@ function App() {
             {selectedFriend && (
               <p className="sent-to-label">Đã gửi đến: <strong>{users.find(u => u.id === selectedFriend)?.displayName}</strong></p>
             )}
-            <div className="final-card" style={{ backgroundColor: cardColor }}>
-              <p>{message}</p>
-              <div className="final-stamps">
-                {stamps.map((s, i) => <span key={i}>{s}</span>)}
+            <div
+              className="final-card"
+              style={{
+                background: bgStyle.value,
+                fontFamily: fontFamily
+              }}
+            >
+              <p className="card-text">{message}</p>
+              <div className="card-stamps-layer">
+                {stamps.map((s) => (
+                  <span
+                    key={s.id}
+                    className="placed-stamp"
+                    style={{ left: `${s.x}%`, top: `${s.y}%` }}
+                  >
+                    {s.char}
+                  </span>
+                ))}
               </div>
             </div>
 
@@ -594,10 +673,10 @@ function App() {
                 <p style={{ color: '#fff', width: '100%' }}>Chưa có tấm thiệp nào.</p>
               ) : (
                 (listTab === 'received' ? receivedCards : myCards).map(card => (
-                  <div key={card.id} className="mini-card" style={{ backgroundColor: card.color }}>
+                  <div key={card.id} className="mini-card" style={{ background: card.bgStyle?.value || card.color, fontFamily: card.fontFamily || 'inherit' }}>
                     <p className="mini-msg">{card.message}</p>
                     <div className="mini-stamps">
-                      {card.stamps && card.stamps.slice(0, 3).map((s, i) => <span key={i}>{s}</span>)}
+                      {card.stamps && card.stamps.slice(0, 3).map((s) => <span key={s.id || Math.random()}>{s.char || s}</span>)}
                     </div>
                     <div className="card-footer">
                       <span className="card-author">
@@ -684,10 +763,24 @@ function App() {
               {viewingCard.photoURL && <img src={viewingCard.photoURL} alt="avt" className="user-avatar" />}
               <p>Từ: <strong>{viewingCard.authorName}</strong></p>
             </div>
-            <div className="final-card" style={{ backgroundColor: viewingCard.color }}>
+            <div
+              className="final-card"
+              style={{
+                background: viewingCard.bgStyle?.value || viewingCard.color,
+                fontFamily: viewingCard.fontFamily || "'Caveat', cursive"
+              }}
+            >
               <p className="card-text">{viewingCard.message}</p>
-              <div className="final-stamps">
-                {viewingCard.stamps && viewingCard.stamps.map((s, i) => <span key={i}>{s}</span>)}
+              <div className="card-stamps-layer">
+                {viewingCard.stamps && viewingCard.stamps.map((s) => (
+                  <span
+                    key={s.id || Math.random()}
+                    className="placed-stamp"
+                    style={{ left: `${s.x || 50}%`, top: `${s.y || 50}%` }}
+                  >
+                    {s.char || s}
+                  </span>
+                ))}
               </div>
             </div>
             <div className="view-card-actions">
