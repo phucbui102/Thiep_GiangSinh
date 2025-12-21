@@ -794,3 +794,147 @@ body {
   transform: translate(-50%, -50%) scale(1.3);
   filter: drop-shadow(0 0 5px gold);
 }
+
+/* --- DECORATIONS: SNOWMAN & SANTA --- */
+.snowman {
+  position: fixed;
+  bottom: 20px;
+  left: 30px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: transform 0.3s;
+  pointer-events: none;
+}
+
+.snowman-body {
+  background: white;
+  border-radius: 50%;
+  box-shadow: inset -5px -5px 10px rgba(0, 0, 0, 0.1), 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.snowman-bottom {
+  width: 90px;
+  height: 90px;
+}
+
+.snowman-middle {
+  width: 65px;
+  height: 65px;
+  margin-top: -15px;
+}
+
+.snowman-head {
+  width: 45px;
+  height: 45px;
+  margin-top: -12px;
+  position: relative;
+}
+
+.eye {
+  width: 5px;
+  height: 5px;
+  background: #333;
+  border-radius: 50%;
+  position: absolute;
+  top: 15px;
+}
+
+.eye-left {
+  left: 12px;
+}
+
+.eye-right {
+  right: 12px;
+}
+
+.nose {
+  width: 0;
+  height: 0;
+  border-left: 12px solid #ff8c00;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  position: absolute;
+  top: 22px;
+  left: 20px;
+  transform: rotate(-10deg);
+}
+
+.hat {
+  width: 30px;
+  height: 25px;
+  background: #222;
+  position: absolute;
+  top: -20px;
+  left: 7.5px;
+  border-radius: 3px 3px 0 0;
+}
+
+.hat::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: -10px;
+  width: 50px;
+  height: 6px;
+  background: #222;
+  border-radius: 5px;
+}
+
+.scarf {
+  width: 35px;
+  height: 8px;
+  background: var(--color-christmas-red);
+  position: absolute;
+  top: 38px;
+  z-index: 5;
+  border-radius: 5px;
+}
+
+/* Santa Flying */
+@keyframes santaFly {
+  0% {
+    transform: translateX(110vw) scaleX(-1);
+  }
+
+  100% {
+    transform: translateX(-40vw) scaleX(-1);
+  }
+}
+
+.santa-container {
+  position: fixed;
+  top: 10%;
+  left: 0;
+  width: 100%;
+  height: 100px;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.santa-flying {
+  font-size: 3.5rem;
+  position: absolute;
+  animation: santaFly 25s linear infinite;
+  display: flex;
+  align-items: center;
+}
+
+.santa-flying::after {
+  content: '🦌🦌🦌';
+  font-size: 1.5rem;
+  margin-left: -10px;
+}
+
+@media (max-width: 600px) {
+  .snowman {
+    transform: scale(0.6);
+    left: 10px;
+    bottom: 20px;
+  }
+
+  .santa-flying {
+    font-size: 2.5rem;
+  }
+}

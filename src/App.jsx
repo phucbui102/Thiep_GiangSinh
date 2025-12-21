@@ -411,6 +411,22 @@ function App() {
         ))}
       </div>
 
+      <div className="santa-container">
+        <div className="santa-flying">🎅</div>
+      </div>
+
+      <div className="snowman">
+        <div className="snowman-head snowman-body">
+          <div className="hat"></div>
+          <div className="eye eye-left"></div>
+          <div className="eye eye-right"></div>
+          <div className="nose"></div>
+        </div>
+        <div className="scarf"></div>
+        <div className="snowman-middle snowman-body"></div>
+        <div className="snowman-bottom snowman-body"></div>
+      </div>
+
       <div className="auth-bar">
         {user ? (
           <div className="user-info">
